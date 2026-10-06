@@ -1,307 +1,205 @@
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { api, cop } from '../api'
+import { ref, reactive, onMounted } from 'vue'
+import { api } from '../api'
+import { iconoZona, ZONAS_BASE } from '../zonas'
+import NoticiaTarjeta from '../components/NoticiaTarjeta.vue'
+import AvisoTarjeta from '../components/AvisoTarjeta.vue'
+import fondoEdificio from '../assets/edificio_editado.jpg'
+import logoTrend from '../assets/logo-trend-claro.png'
 
-const propiedades = ref([])
-const cargando = ref(true)
-const error = ref('')
-const verFiltros = ref(false) // en móvil el panel de filtros se abre con un botón
+/* ---------- contenido del conjunto (editable) ---------- */
 
-const VACIO = {
-  texto: '',
-  tipo: '',
-  ciudad: '',
-  precioMin: '',
-  precioMax: '',
-  habitaciones: 0,
-  banos: 0,
-  areaMin: '',
-  estrato: '',
-  parqueadero: false,
-}
-const f = reactive({ ...VACIO })
-const orden = ref('recientes')
-
-const ORDENES = {
-  recientes: (a, b) => b.id - a.id,
-  menor: (a, b) => a.precio - b.precio,
-  mayor: (a, b) => b.precio - a.precio,
-  area: (a, b) => area(b) - area(a),
+const CONJUNTO = {
+  titulo: 'Un edificio pensado para vivir bien',
+  parrafos: [
+    'Trend Apartamentos es un conjunto residencial de apartamentos en altura administrado por Alianza Grupo Inmobiliario S.A.S. Reúne apartamentos de distintas áreas y tipologías, con zonas comunes pensadas para el encuentro, el descanso y el día a día de sus residentes.',
+    'Desde esta página puedes conocer el conjunto, leer las noticias de la administración, revisar los apartamentos en venta y arriendo y entrar a la zona privada de propietarios y residentes.',
+  ],
+  datos: [
+    ['Administración', 'Alianza Grupo Inmobiliario S.A.S.'],
+    ['Tipo de inmueble', 'Apartamentos'],
+    ['Anuncios', 'Venta y arriendo'],
+    ['Zonas comunes', 'Gimnasio, terrazas, coworking, lavandería y parqueaderos'],
+  ],
 }
 
-onMounted(async () => {
-  try {
-    propiedades.value = await api.listar({ estado: 'publicado' })
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    cargando.value = false
-  }
+
+const noticias = ref([]) // últimas noticias publicadas del blog
+const avisos = ref([]) // últimos apartamentos publicados en venta o arriendo
+const zonas = ref(ZONAS_BASE) // se reemplazan por las de la administración al cargar
+
+// Detalle de cada zona: foto mostrada (índice por zona) y foto abierta en grande
+const fotoActiva = reactive({})
+const ampliada = ref(null)
+const ancla = (z) => ({ path: '/', hash: `#zona-${z.slug}` })
+const parrafos = (texto) => (texto || '').split(/\n\s*\n/).map((t) => t.trim()).filter(Boolean)
+
+onMounted(() => {
+  api.noticias({ limite: 3 }).then((n) => (noticias.value = n)).catch(() => {})
+  api.listar({ estado: 'publicado' }).then((a) => (avisos.value = a.slice(0, 3))).catch(() => {})
+  api.zonas().then((z) => z.length && (zonas.value = z)).catch(() => {})
 })
-
-const area = (p) => p.area_construida_m2 || p.area_lote_m2 || 0
-
-// Silueta nocturna de La Candelaria para la portada (ancho y alto de cada fachada)
-const casas = []
-for (let x = -10, i = 0; x < 1210; i++) {
-  const w = 44 + ((i * 17) % 28)
-  casas.push({ x, w, h: 26 + ((i * 11) % 20), luz: i % 3 !== 1 })
-  x += w + 3
-}
-// Torres del Parque (Salmona): siluetas escalonadas en ladrillo
-const torres = [
-  { x: 830, top: 150, w: 46 },
-  { x: 884, top: 128, w: 52 },
-  { x: 944, top: 165, w: 44 },
-]
-const escalones = (t) =>
-  `M${t.x} 300V${t.top + 24}H${t.x + 8}V${t.top + 12}H${t.x + 18}V${t.top}H${t.x + t.w}V300Z`
-
-const catalogo = ref(null)
-const buscar = () => catalogo.value.scrollIntoView({ behavior: 'smooth' })
-const millones = (v) => `$${Math.round(v / 1e6).toLocaleString('es-CO')} M`
-
-// Solo se ofrecen los tipos y ciudades que tienen propiedades publicadas
-function conteo(campo) {
-  const c = {}
-  propiedades.value.forEach((p) => (c[p[campo]] = (c[p[campo]] || 0) + 1))
-  return Object.entries(c).sort(([a], [b]) => a.localeCompare(b))
-}
-const tipos = computed(() => conteo('tipo'))
-const ciudades = computed(() => conteo('ciudad').map(([c]) => c))
-
-const filtradas = computed(() => {
-  const texto = f.texto.trim().toLowerCase()
-  return propiedades.value
-    .filter((p) => {
-      if (texto && ![p.titulo, p.ciudad, p.barrio, p.descripcion].join(' ').toLowerCase().includes(texto)) return false
-      if (f.tipo && p.tipo !== f.tipo) return false
-      if (f.ciudad && p.ciudad !== f.ciudad) return false
-      if (f.precioMin !== '' && p.precio < f.precioMin) return false
-      if (f.precioMax !== '' && p.precio > f.precioMax) return false
-      if (p.habitaciones < f.habitaciones) return false
-      if (p.banos < f.banos) return false
-      if (f.areaMin !== '' && area(p) < f.areaMin) return false
-      if (f.estrato && p.estrato !== f.estrato) return false
-      if (f.parqueadero && !p.parqueaderos) return false
-      return true
-    })
-    .sort(ORDENES[orden.value])
-})
-
-const cifras = computed(() => {
-  const ps = propiedades.value
-  return [
-    [ps.length, 'Propiedades disponibles'],
-    [ps.length ? millones(Math.min(...ps.map((p) => p.precio))) : '—', 'Precio desde'],
-    [tipos.value.length, 'Tipos de inmueble'],
-    [ciudades.value.length, ciudades.value.length === 1 ? 'Ciudad' : 'Ciudades'],
-  ]
-})
-
-const hayFiltros = computed(() => Object.keys(VACIO).some((k) => f[k] !== VACIO[k]))
-const limpiar = () => Object.assign(f, VACIO)
 </script>
 
 <template>
   <section class="hero">
-    <img
-      class="hero-foto"
-      src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?q=80&w=2000&auto=format&fit=crop"
-      alt=""
-    />
-    <div class="hero-velo"></div>
-    <div class="hero-trama"></div>
-
+    <div class="hero-fondo" :style="{ backgroundImage: `url(${fondoEdificio})` }" aria-hidden="true"></div>
+    <div class="hero-velo" aria-hidden="true"></div>
 
     <div class="hero-contenido contenedor">
-      <span class="pildora"><span class="punto"></span>Bogotá · 2.600 msnm</span>
-      <h1>Tu hogar entre la <em>niebla</em> y el <u>ladrillo</u>.</h1>
-      <p>
-        Apartamentos, casas y locales frente a los Cerros Orientales. Encuentra el tuyo, del centro
-        histórico a la sabana.
-      </p>
-      <form class="buscador" role="search" @submit.prevent="buscar">
-        <input v-model="f.texto" type="search" placeholder="Barrio, ciudad o palabra clave" aria-label="Buscar" />
-        <button class="boton" type="submit"><span>Buscar</span> <span class="flecha" aria-hidden="true">↓</span></button>
-      </form>
-
-      <dl class="cifras">
-        <div v-for="[valor, etiqueta] in cifras" :key="etiqueta">
-          <dt>{{ etiqueta }}</dt>
-          <dd>{{ cargando ? '—' : valor }}</dd>
+      <div class="hero-texto">
+        <img class="hero-logo" :src="logoTrend" alt="Trend Apartamentos" />
+        <span class="pildora"><span class="punto"></span>Administración Alianza Grupo Inmobiliario</span>
+        <h1>Bienvenido a <em>Trend</em>, tu comunidad.</h1>
+        <p>
+          Espacio de propietarios y residentes del conjunto Trend Apartamentos: conoce el edificio,
+          sus zonas comunes y las noticias de la administración.
+        </p>
+        <div class="hero-acciones">
+          <RouterLink class="boton" :to="{ path: '/', hash: '#conjunto' }">
+            Conocer el conjunto <span class="flecha" aria-hidden="true">↓</span>
+          </RouterLink>
+          <RouterLink class="boton boton-claro" to="/noticias">Ver noticias</RouterLink>
         </div>
-      </dl>
+      </div>
+    </div>
+
+    <div class="contenedor hero-pie">
+      <ul v-if="zonas.length" class="hero-zonas" aria-label="Zonas comunes">
+        <li v-for="z in zonas" :key="z.id">
+          <RouterLink :to="ancla(z)">
+            <span class="hero-zona-icono" v-html="iconoZona(z.icono)"></span>{{ z.nombre }}
+          </RouterLink>
+        </li>
+      </ul>
     </div>
   </section>
 
-<!-- Cerros orientales, Monserrate, Torres del Parque y La Candelaria de noche -->
-  <svg class="horizonte" viewBox="0 50 1200 250" aria-hidden="true">
-    <defs>
-      <pattern id="ventanas" width="8" height="9" patternUnits="userSpaceOnUse">
-        <rect x="2" y="3" width="4" height="4" fill="#d98a39" opacity=".55" />
-      </pattern>
-    </defs>
-    <path d="M0 170L90 138L170 150L260 108L340 124L420 96L520 118L600 92L700 114L800 84L900 110L1000 80L1100 104L1200 88V300H0Z" fill="#343a37" />
-    <path d="M0 222C120 202 210 190 300 170C380 160 425 140 470 102L500 90L530 102C600 132 650 140 720 150C800 160 860 122 920 96L950 88L980 100C1050 140 1120 165 1200 176V300H0Z" fill="#2d3b32" />
-    <g fill="#f7f5f0" opacity=".85">
-      <rect x="490" y="76" width="22" height="14" />
-      <polygon points="488,77 501,69 514,77" fill="#b85032" />
-      <rect x="497" y="63" width="7" height="12" />
-      <polygon points="496,64 500.5,58 505,64" fill="#b85032" />
-    </g>
-    <rect x="949" y="72" width="3" height="16" fill="#f7f5f0" opacity=".7" />
-    <rect x="944" y="76" width="13" height="3" fill="#f7f5f0" opacity=".7" />
-    <path d="M0 252C200 232 350 226 500 236C700 249 900 226 1200 242V300H0Z" fill="#25252b" />
+  <section id="conjunto" class="seccion">
+    <div class="contenedor">
+      <div class="conjunto">
+        <div class="conjunto-texto">
+          <span class="rotulo">El conjunto</span>
+          <h2>{{ CONJUNTO.titulo }}</h2>
+          <p v-for="texto in CONJUNTO.parrafos" :key="texto">{{ texto }}</p>
+        </div>
+        <dl class="conjunto-datos">
+          <div v-for="[etiqueta, valor] in CONJUNTO.datos" :key="etiqueta">
+            <dt>{{ etiqueta }}</dt>
+            <dd>{{ valor }}</dd>
+          </div>
+        </dl>
+      </div>
 
-    <g v-for="t in torres" :key="t.x">
-      <path :d="escalones(t)" fill="#8c3820" />
-      <path :d="escalones(t)" fill="url(#ventanas)" />
-    </g>
+      <div id="zonas" class="zonas">
+        <div class="zonas-cabeza">
+          <div>
+            <span class="rotulo">Zonas comunes</span>
+            <h3>Espacios que puedes disfrutar</h3>
+          </div>
+          <p class="zonas-nota">Haz clic en cada espacio para ver su descripción y sus fotos.</p>
+        </div>
+        <div class="zonas-grid">
+          <RouterLink v-for="z in zonas" :key="z.id" class="zona" :to="ancla(z)">
+            <span class="zona-icono" v-html="iconoZona(z.icono)"></span>
+            <h4>{{ z.nombre }}</h4>
+            <p>{{ z.resumen }}</p>
+            <span class="noticia-leer">Ver detalle <span class="flecha" aria-hidden="true">↓</span></span>
+          </RouterLink>
+        </div>
+      </div>
 
-    <g fill="#2d2d34">
-      <rect x="330" y="196" width="18" height="104" />
-      <rect x="402" y="196" width="18" height="104" />
-      <rect x="346" y="222" width="58" height="78" />
-      <polygon points="344,224 375,202 406,224" />
-      <circle cx="339" cy="192" r="8" /><circle cx="411" cy="192" r="8" />
-      <rect x="365" y="250" width="20" height="30" rx="10" fill="#d98a39" opacity=".5" />
-    </g>
+      <!-- Detalle de cada zona: los botones de arriba bajan hasta aquí -->
+      <div class="zonas-detalle">
+        <article v-for="z in zonas" :id="`zona-${z.slug}`" :key="z.id" class="zona-fila">
+          <div class="zona-fila-fotos">
+            <button
+              v-if="z.fotos.length"
+              type="button"
+              class="zona-fila-principal"
+              @click="ampliada = z.fotos[fotoActiva[z.slug] || 0].url"
+            >
+              <img :src="z.fotos[fotoActiva[z.slug] || 0].url" :alt="z.nombre" loading="lazy" />
+            </button>
+            <div v-else class="zona-fila-principal zona-fila-sin-foto" v-html="iconoZona(z.icono)"></div>
+            <div v-if="z.fotos.length > 1" class="zona-fila-miniaturas">
+              <button
+                v-for="(f, i) in z.fotos"
+                :key="f.id"
+                type="button"
+                :class="{ activo: (fotoActiva[z.slug] || 0) === i }"
+                :aria-label="`Ver foto ${i + 1} de ${z.nombre}`"
+                @click="fotoActiva[z.slug] = i"
+              >
+                <img :src="f.url" alt="" loading="lazy" />
+              </button>
+            </div>
+          </div>
+          <div class="zona-fila-texto">
+            <span class="zona-icono" v-html="iconoZona(z.icono)"></span>
+            <h3>{{ z.nombre }}</h3>
+            <p v-for="(texto, i) in parrafos(z.descripcion || z.resumen)" :key="i">{{ texto }}</p>
+            <p v-if="z.horario" class="zona-fila-horario"><strong>Horario:</strong> {{ z.horario }}</p>
+            <RouterLink class="enlace-subir" :to="{ path: '/', hash: '#zonas' }">↑ Volver a los espacios</RouterLink>
+          </div>
+        </article>
+      </div>
 
-    <g v-for="c in casas" :key="c.x" :transform="`translate(${c.x} ${300 - c.h})`">
-      <polygon :points="`-3,5 ${c.w + 3},5 ${c.w - 5},-4 5,-4`" fill="#5a2a1a" />
-      <rect y="5" :width="c.w" :height="c.h - 5" fill="#1e1e22" />
-      <template v-if="c.h > 34 && c.luz">
-        <rect x="6" y="11" width="8" height="9" fill="#d98a39" opacity=".7" />
-        <rect :x="c.w - 14" y="11" width="8" height="9" fill="#d98a39" opacity=".45" />
-      </template>
-    </g>
-  </svg>
+      <div v-if="ampliada" class="visor" role="dialog" aria-label="Foto ampliada" @click="ampliada = null">
+        <img :src="ampliada" alt="" />
+        <button type="button" class="visor-cerrar" aria-label="Cerrar">×</button>
+      </div>
+    </div>
+  </section>
 
-  <section ref="catalogo" class="seccion">
+  <section v-if="avisos.length" class="seccion">
     <div class="contenedor">
       <div class="seccion-cabeza">
         <div>
-          <span class="rotulo">Catálogo</span>
-          <h2>Propiedades disponibles</h2>
+          <span class="rotulo">Venta y arriendo</span>
+          <h2>Apartamentos disponibles</h2>
         </div>
-        <nav v-if="tipos.length" class="chips" aria-label="Tipo de propiedad">
-          <button type="button" :class="{ activo: !f.tipo }" @click="f.tipo = ''">
-            Todos <span>{{ propiedades.length }}</span>
-          </button>
-          <button v-for="[t, n] in tipos" :key="t" type="button" :class="{ activo: f.tipo === t }" @click="f.tipo = t">
-            {{ t }} <span>{{ n }}</span>
-          </button>
-        </nav>
+        <RouterLink class="boton secundario" to="/venta-arriendo">
+          Ver todos <span class="flecha" aria-hidden="true">→</span>
+        </RouterLink>
       </div>
+      <div class="tarjetas">
+        <AvisoTarjeta v-for="a in avisos" :key="a.id" :aviso="a" />
+      </div>
+    </div>
+  </section>
 
-      <div class="catalogo">
-        <aside class="panel" :class="{ abierto: verFiltros }">
-          <div class="panel-cabeza">
-            <h2>Filtros</h2>
-            <button v-if="hayFiltros" type="button" class="enlace" @click="limpiar">Limpiar</button>
-          </div>
-
-          <label v-if="ciudades.length > 1">
-            Ciudad
-            <select v-model="f.ciudad">
-              <option value="">Todas</option>
-              <option v-for="c in ciudades" :key="c">{{ c }}</option>
-            </select>
-          </label>
-
-          <fieldset class="rango">
-            <legend>Precio</legend>
-            <input v-model.number="f.precioMin" type="number" min="0" step="1000000" placeholder="Mínimo" aria-label="Precio mínimo" />
-            <input v-model.number="f.precioMax" type="number" min="0" step="1000000" placeholder="Máximo" aria-label="Precio máximo" />
-          </fieldset>
-
-          <fieldset>
-            <legend>Habitaciones</legend>
-            <div class="segmentos">
-              <button v-for="n in [0, 1, 2, 3, 4]" :key="n" type="button" :class="{ activo: f.habitaciones === n }" @click="f.habitaciones = n">
-                {{ n ? `${n}+` : 'Todas' }}
-              </button>
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend>Baños</legend>
-            <div class="segmentos">
-              <button v-for="n in [0, 1, 2, 3]" :key="n" type="button" :class="{ activo: f.banos === n }" @click="f.banos = n">
-                {{ n ? `${n}+` : 'Todos' }}
-              </button>
-            </div>
-          </fieldset>
-
-          <label>
-            Área mínima (m²)
-            <input v-model.number="f.areaMin" type="number" min="0" placeholder="Ej: 60" />
-          </label>
-
-          <label>
-            Estrato
-            <select v-model.number="f.estrato">
-              <option value="">Cualquiera</option>
-              <option v-for="n in 6" :key="n" :value="n">{{ n }}</option>
-            </select>
-          </label>
-
-          <label class="check">
-            <input v-model="f.parqueadero" type="checkbox" />
-            Con parqueadero
-          </label>
-        </aside>
-
-        <div class="resultados">
-          <div class="resultados-cabeza">
-            <p>
-              <strong>{{ filtradas.length }}</strong>
-              {{ filtradas.length === 1 ? 'propiedad' : 'propiedades' }}
-            </p>
-            <div class="resultados-acciones">
-              <button type="button" class="boton secundario solo-movil" @click="verFiltros = !verFiltros">
-                {{ verFiltros ? 'Ocultar filtros' : 'Filtros' }}
-              </button>
-              <select v-model="orden" aria-label="Ordenar">
-                <option value="recientes">Más recientes</option>
-                <option value="menor">Menor precio</option>
-                <option value="mayor">Mayor precio</option>
-                <option value="area">Mayor área</option>
-              </select>
-            </div>
-          </div>
-
-          <p v-if="error" class="error">{{ error }}</p>
-          <p v-else-if="cargando">Cargando…</p>
-          <div v-else-if="!propiedades.length" class="vacio">Todavía no hay propiedades publicadas.</div>
-          <div v-else-if="!filtradas.length" class="vacio">
-            Ninguna propiedad coincide con los filtros.
-            <button type="button" class="enlace" @click="limpiar">Limpiar filtros</button>
-          </div>
-
-          <div class="tarjetas">
-            <RouterLink v-for="p in filtradas" :key="p.id" class="tarjeta" :to="`/propiedades/${p.id}`">
-              <div class="tarjeta-foto">
-                <img v-if="p.fotos.length" :src="p.fotos[0].url" :alt="p.titulo" loading="lazy" />
-                <div v-else class="sin-foto">Sin foto</div>
-                <span class="insignia">{{ p.tipo }}</span>
-              </div>
-              <div class="tarjeta-cuerpo">
-                <span class="tarjeta-lugar">{{ [p.barrio, p.ciudad].filter(Boolean).join(' | ') }}</span>
-                <h3>{{ p.titulo }}</h3>
-                <p class="tarjeta-precio">{{ cop(p.precio) }}</p>
-                <ul class="rasgos">
-                  <li v-if="p.habitaciones">{{ p.habitaciones }} hab.</li>
-                  <li v-if="p.banos">{{ p.banos }} {{ p.banos === 1 ? 'baño' : 'baños' }}</li>
-                  <li v-if="area(p)">{{ area(p) }} m²</li>
-                  <li v-if="p.parqueaderos">{{ p.parqueaderos }} parq.</li>
-                  <li v-if="p.estrato">Estrato {{ p.estrato }}</li>
-                </ul>
-              </div>
-            </RouterLink>
-          </div>
+  <section v-if="noticias.length" class="seccion noticias-inicio">
+    <div class="contenedor">
+      <div class="seccion-cabeza">
+        <div>
+          <span class="rotulo">Blog</span>
+          <h2>Últimas noticias</h2>
         </div>
+        <RouterLink class="boton secundario" to="/noticias">
+          Ver todas <span class="flecha" aria-hidden="true">→</span>
+        </RouterLink>
+      </div>
+      <div class="tarjetas">
+        <NoticiaTarjeta v-for="n in noticias" :key="n.id" :noticia="n" />
+      </div>
+    </div>
+  </section>
+
+  <section class="seccion seccion-privada">
+    <div class="contenedor">
+      <div class="zona-privada zona-privada-inicio">
+        <div>
+          <span class="rotulo">Residentes</span>
+          <h3>Zona privada de propietarios</h3>
+          <p>
+            Actas, reglamento de propiedad horizontal, cuotas de administración, PQRS y reserva de
+            zonas comunes. Solo para propietarios y residentes registrados.
+          </p>
+        </div>
+        <RouterLink class="boton" to="/privado">
+          Entrar a la zona privada <span class="flecha" aria-hidden="true">→</span>
+        </RouterLink>
       </div>
     </div>
   </section>
@@ -309,17 +207,17 @@ const limpiar = () => Object.assign(f, VACIO)
   <section class="llamado seccion">
     <div class="contenedor">
       <div>
-        <span class="rotulo">Únete</span>
-        <h2>El ladrillo no es solo materia; es la memoria cálida de la sabana.</h2>
+        <span class="rotulo">Comunidad</span>
+        <h2>Tú también haces parte de Trend Apartamentos.</h2>
         <p>
-          Crea tu cuenta y encuentra un hogar con carácter bogotano: fachadas en ladrillo, luz del
-          altiplano y vista a los cerros.
+          Propietarios y arrendatarios tienen acceso a la zona privada: actas, reglamento, cuotas,
+          PQRS y reserva de zonas comunes.
         </p>
       </div>
       <div class="llamado-caja">
-        <h3>Crea tu cuenta gratis</h3>
-        <p>Toma menos de un minuto.</p>
-        <RouterLink class="boton" to="/registro">Registrarme <span class="flecha" aria-hidden="true">→</span></RouterLink>
+        <h3>Ingresa a tu cuenta</h3>
+        <p>¿Aún no tienes usuario? Solicítalo a la administración del conjunto.</p>
+        <RouterLink class="boton" to="/privado">Ingresar <span class="flecha" aria-hidden="true">→</span></RouterLink>
       </div>
     </div>
   </section>
