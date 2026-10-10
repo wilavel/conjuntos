@@ -177,13 +177,19 @@ class ZonaComun(Base):
     icono: Mapped[str] = mapped_column(String(30), default="")  # clave de ícono del frontend
     resumen: Mapped[str] = mapped_column(String(300), default="")
     descripcion: Mapped[str] = mapped_column(Text, default="")
-    horario: Mapped[str] = mapped_column(String(200), default="")
+    horario: Mapped[str] = mapped_column(String(200), default="")  # texto libre (si no hay franjas)
     orden: Mapped[int] = mapped_column(Integer, default=0)
+    reservable: Mapped[bool] = mapped_column(Boolean, default=True)  # los apartamentos pueden reservarla
+    capacidad: Mapped[int] = mapped_column(Integer, default=1)  # apartamentos a la vez en la misma hora
 
     fotos: Mapped[list["FotoZona"]] = relationship(
         back_populates="zona",
         cascade="all, delete-orphan",
         order_by="FotoZona.id",
+    )
+    franjas: Mapped[list["HorarioZona"]] = relationship(
+        cascade="all, delete-orphan",
+        order_by="[HorarioZona.dia, HorarioZona.inicio]",
     )
 
 
@@ -302,3 +308,34 @@ class Postulacion(Base):
     sorteo: Mapped[Sorteo] = relationship(back_populates="postulaciones")
     apartamento: Mapped["Apartamento"] = relationship(lazy="joined")
     parqueadero: Mapped["Parqueadero | None"] = relationship(lazy="joined")
+
+
+class HorarioZona(Base):
+    """Horario de atención de una zona común: ej. lunes (0) de 06:00 a 22:00."""
+
+    __tablename__ = "horarios_zona"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    zona_id: Mapped[int] = mapped_column(ForeignKey("zonas_comunes.id", ondelete="CASCADE"))
+    dia: Mapped[int] = mapped_column(Integer)  # 0 = lunes ... 6 = domingo
+    inicio: Mapped[str] = mapped_column(String(5))
+    fin: Mapped[str] = mapped_column(String(5))
+
+
+class Reserva(Base):
+    """Reserva de una zona común por un apartamento, de 1 o 2 horas."""
+
+    __tablename__ = "reservas_zona"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    zona_id: Mapped[int] = mapped_column(ForeignKey("zonas_comunes.id", ondelete="CASCADE"))
+    apartamento_id: Mapped[int] = mapped_column(ForeignKey("apartamentos_conjunto.id", ondelete="CASCADE"))
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    fecha: Mapped[date] = mapped_column()
+    inicio: Mapped[str] = mapped_column(String(5))  # "18:00"
+    horas: Mapped[int] = mapped_column(Integer, default=1)  # 1 o 2
+    estado: Mapped[str] = mapped_column(String(15), default="activa")  # activa | cancelada
+    creado: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    zona: Mapped[ZonaComun] = relationship(lazy="joined")
+    apartamento: Mapped["Apartamento"] = relationship(lazy="joined")

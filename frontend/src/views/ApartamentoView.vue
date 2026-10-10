@@ -5,6 +5,7 @@ import { api, cop, nombreApto, fechaLarga } from '../api'
 import PersonaCampos from '../components/PersonaCampos.vue'
 import InvitacionesAviso from '../components/InvitacionesAviso.vue'
 import { ultimasInvitaciones } from '../invitaciones'
+import Icono from '../components/Icono.vue'
 
 const props = defineProps({ id: String })
 const router = useRouter()
@@ -238,7 +239,7 @@ const eliminar = () =>
       <ul class="personas-lista">
         <li v-for="p in apto.parqueaderos_asignados" :key="p.id">
           <div class="persona-datos">
-            <strong>{{ p.tipo === 'moto' ? '🏍️' : '🚗' }} {{ p.numero }}</strong>
+            <strong><Icono :nombre="p.tipo === 'moto' ? 'two_wheeler' : 'directions_car'" /> {{ p.numero }}</strong>
             <span>{{ p.tipo === 'moto' ? 'Moto' : 'Carro' }}<template v-if="p.ubicacion"> · {{ p.ubicacion }}</template></span>
           </div>
           <button type="button" class="enlace peligro-texto" @click="liberarParq(p)">Liberar</button>

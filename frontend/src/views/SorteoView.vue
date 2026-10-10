@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, nombreApto, fechaCorta } from '../api'
+import Icono from '../components/Icono.vue'
 
 const props = defineProps({ id: String })
 const router = useRouter()
@@ -129,7 +130,7 @@ const eliminar = () =>
             <strong>{{ p.posicion }}. {{ nombreApto(p.apartamento) }}</strong>
             <span>Parqueadero {{ p.parqueadero }} · {{ fechaCorta(sorteo.inicio) }} al {{ fechaCorta(sorteo.fin) }}</span>
           </div>
-          <span class="perfil-insignia propietario">🚗 {{ p.parqueadero }}</span>
+          <span class="perfil-insignia propietario"><Icono nombre="directions_car" /> {{ p.parqueadero }}</span>
         </li>
       </ul>
       <template v-if="espera.length">

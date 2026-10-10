@@ -82,11 +82,11 @@ async function agendar() {
         </div>
       </div>
       <template v-if="hora">
-        <span class="agendar-paso">3. Tus datos</span>
+        <span class="agendar-paso">3. Tus datos <span class="opcional">(nombre, correo y teléfono para confirmar la visita)</span></span>
         <div class="grupo">
           <label>Nombre<input v-model="datos.nombre" required minlength="2" maxlength="100" autocomplete="name" /></label>
           <label>Teléfono<input v-model="datos.telefono" type="tel" required maxlength="30" autocomplete="tel" /></label>
-          <label>Correo <span class="opcional">(opcional, para la confirmación)</span><input v-model="datos.email" type="email" maxlength="255" autocomplete="email" /></label>
+          <label>Correo<input v-model="datos.email" type="email" required maxlength="255" autocomplete="email" /></label>
         </div>
         <label>Mensaje <span class="opcional">(opcional)</span><textarea v-model="datos.mensaje" rows="2" maxlength="1000"></textarea></label>
         <p v-if="error" class="error">{{ error }}</p>

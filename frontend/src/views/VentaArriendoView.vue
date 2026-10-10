@@ -9,7 +9,6 @@ const error = ref('')
 const verFiltros = ref(false) // en móvil el panel de filtros se abre con un botón
 
 const VACIO = {
-  texto: '',
   negocio: '',
   tipo: '',
   ciudad: '',
@@ -61,10 +60,8 @@ const negocioDe = (p) => (p.negocio === 'arriendo' ? 'arriendo' : 'venta')
 const conteoNegocio = (n) => propiedades.value.filter((p) => negocioDe(p) === n).length
 
 const filtradas = computed(() => {
-  const texto = f.texto.trim().toLowerCase()
   return propiedades.value
     .filter((p) => {
-      if (texto && ![p.titulo, p.ciudad, p.barrio, p.descripcion].join(' ').toLowerCase().includes(texto)) return false
       if (f.negocio && negocioDe(p) !== f.negocio) return false
       if (f.tipo && p.tipo !== f.tipo) return false
       if (f.ciudad && p.ciudad !== f.ciudad) return false
@@ -102,9 +99,6 @@ const limpiar = () => Object.assign(f, VACIO)
         <div>
           <span class="rotulo">Catálogo</span>
           <h1>Venta y arriendo de apartamentos</h1>
-          <form class="buscador buscador-catalogo" role="search" @submit.prevent>
-            <input v-model="f.texto" type="search" placeholder="Barrio, ciudad o palabra clave" aria-label="Buscar" />
-          </form>
           <dl class="cifras cifras-catalogo">
             <div v-for="[valor, etiqueta] in cifras" :key="etiqueta">
               <dt>{{ etiqueta }}</dt>

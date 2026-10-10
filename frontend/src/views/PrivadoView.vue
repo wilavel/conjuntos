@@ -1,7 +1,9 @@
 <script setup>
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, cop, nombreApto, fechaCorta, PERFILES } from '../api'
+import ReservarZona from '../components/ReservarZona.vue'
+import Icono from '../components/Icono.vue'
 import { sesion as usuario, guardarSesion, cerrarSesion, actualizarPerfil } from '../sesion'
 
 const route = useRoute()
@@ -45,6 +47,22 @@ watch(
 )
 const ESTADO_AVISO = { borrador: 'Borrador', publicado: 'Publicado', vendido: 'Cerrado' }
 
+// Visitas agendadas a los avisos de mis apartamentos
+const visitas = ref([])
+const cargarVisitas = async () => (visitas.value = esPropietario.value ? await api.misVisitas().catch(() => []) : [])
+watch(esPropietario, cargarVisitas, { immediate: true })
+const porConfirmar = (avisoId) => visitas.value.filter((v) => v.aviso.id === avisoId && v.estado === 'pendiente').length
+const fechaVisita = (v) => new Date(`${v.fecha}T12:00:00`).toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })
+async function cambiarVisita(v, estado) {
+  if (estado === 'cancelada' && !confirm(`¿Cancelar la visita de ${v.nombre}?`)) return
+  try {
+    await api.estadoVisita(v.id, estado)
+    await cargarVisitas()
+  } catch (e) {
+    alert(e.message)
+  }
+}
+
 // Sorteos de parqueaderos: postular mis apartamentos y ver resultados
 const sorteos = ref([])
 const errorSorteo = ref('')
@@ -70,6 +88,26 @@ async function retirar(a) {
     await cargarSorteos()
   } catch (e) {
     errorSorteo.value = e.message
+  }
+}
+
+// Reservas de zonas comunes (propietarios y arrendatarios)
+const tieneApartamento = computed(() => !!usuario.value?.apartamentos?.length)
+const reservas = ref([])
+const cargarReservas = async () => (reservas.value = tieneApartamento.value ? await api.misReservas().catch(() => []) : [])
+watch(tieneApartamento, cargarReservas, { immediate: true })
+onMounted(() => {
+  if (route.query.reservar) setTimeout(() => document.getElementById('reservas')?.scrollIntoView({ behavior: 'smooth' }), 400)
+})
+const zonaPedida = typeof route.query.reservar === 'string' ? route.query.reservar : ''
+const fechaReserva = (r) => new Date(`${r.fecha}T12:00:00`).toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })
+async function cancelarReserva(r) {
+  if (!confirm(`¿Cancelar la reserva de ${r.zona.nombre}?`)) return
+  try {
+    await api.cancelarReserva(r.id)
+    await cargarReservas()
+  } catch (e) {
+    alert(e.message)
   }
 }
 
@@ -177,10 +215,51 @@ if (usuario.value?.es_admin && typeof volverA === 'string' && volverA.startsWith
               <strong>{{ p.titulo }}</strong>
               <span>{{ p.negocio === 'arriendo' ? 'Arriendo' : 'Venta' }} · {{ cop(p.precio) }}</span>
               <span v-if="p.apartamento">{{ nombreApto(p.apartamento) }}</span>
+              <span v-if="porConfirmar(p.id)" class="peligro-texto"><Icono nombre="event" /> {{ porConfirmar(p.id) }} {{ porConfirmar(p.id) === 1 ? 'visita' : 'visitas' }} por confirmar</span>
             </div>
             <span class="estado" :class="p.estado">{{ ESTADO_AVISO[p.estado] }}</span>
           </RouterLink>
         </div>
+      </section>
+
+      <section v-if="tieneApartamento" id="reservas" class="mis-avisos">
+        <span class="rotulo">Reservar zonas comunes</span>
+        <ReservarZona :zona-inicial="zonaPedida" @reservado="cargarReservas" />
+        <template v-if="reservas.length">
+          <span class="rotulo mis-reservas-titulo">Mis reservas</span>
+          <ul class="personas-lista">
+            <li v-for="r in reservas" :key="r.id" :class="{ inactiva: r.estado === 'cancelada' }">
+              <div class="persona-datos">
+                <strong>{{ r.zona.nombre }} · {{ fechaReserva(r) }}</strong>
+                <span><Icono nombre="schedule" /> {{ r.inicio }} a {{ r.fin }} · Apto {{ r.apartamento.numero }}</span>
+              </div>
+              <div class="persona-acciones">
+                <span class="estado" :class="r.estado === 'activa' ? 'publicado' : 'vendido'">{{ r.estado }}</span>
+                <button v-if="r.estado === 'activa'" type="button" class="enlace peligro-texto" @click="cancelarReserva(r)">Cancelar</button>
+              </div>
+            </li>
+          </ul>
+        </template>
+      </section>
+
+      <section v-if="esPropietario" class="mis-avisos">
+        <span class="rotulo">Visitas agendadas</span>
+        <p v-if="!visitas.length" class="vacio">No hay visitas próximas a tus avisos.</p>
+        <ul class="personas-lista visitas-propietario">
+          <li v-for="v in visitas" :key="v.id" :class="{ inactiva: v.estado === 'cancelada' }">
+            <div class="persona-datos">
+              <strong>{{ fechaVisita(v) }} · {{ v.hora }}</strong>
+              <span>{{ v.nombre }} · <a :href="`tel:${v.telefono}`">{{ v.telefono }}</a> · <a :href="`mailto:${v.email}`">{{ v.email }}</a></span>
+              <span v-if="v.mensaje">«{{ v.mensaje }}»</span>
+              <small>Aviso: <RouterLink :to="`/propiedades/${v.aviso.id}`">{{ v.aviso.titulo }}</RouterLink></small>
+            </div>
+            <div class="persona-acciones">
+              <span class="estado" :class="{ pendiente: 'borrador', confirmada: 'publicado', cancelada: 'vendido' }[v.estado]">{{ v.estado }}</span>
+              <button v-if="v.estado === 'pendiente'" type="button" class="enlace" @click="cambiarVisita(v, 'confirmada')">Confirmar</button>
+              <button v-if="v.estado !== 'cancelada'" type="button" class="enlace peligro-texto" @click="cambiarVisita(v, 'cancelada')">Cancelar</button>
+            </div>
+          </li>
+        </ul>
       </section>
 
       <section v-if="sorteos.length" class="mis-avisos">
@@ -201,7 +280,7 @@ if (usuario.value?.es_admin && typeof volverA === 'string' && volverA.startsWith
             <li v-for="a in s.apartamentos" :key="a.id">
               <span>Apto {{ a.numero }}</span>
               <template v-if="s.estado === 'realizado'">
-                <strong v-if="a.postulacion?.parqueadero" class="sorteo-gano">🎉 Parqueadero {{ a.postulacion.parqueadero }}</strong>
+                <strong v-if="a.postulacion?.parqueadero" class="sorteo-gano"><Icono nombre="celebration" /> Parqueadero {{ a.postulacion.parqueadero }}</strong>
                 <span v-else-if="a.postulacion?.excluido" class="peligro-texto">No participó: tenía saldo pendiente</span>
                 <span v-else-if="a.postulacion">Lista de espera · posición {{ a.postulacion.posicion }}</span>
               </template>

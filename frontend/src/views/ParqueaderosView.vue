@@ -2,6 +2,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { api, nombreApto, fechaCorta } from '../api'
 import AdminNav from '../components/AdminNav.vue'
+import Icono from '../components/Icono.vue'
 
 const parqueaderos = ref([])
 const apartamentos = ref([])
@@ -213,7 +214,7 @@ const eliminar = (p) =>
       </form>
       <template v-else>
         <div class="persona-datos">
-          <strong>{{ p.tipo === 'moto' ? '🏍️' : '🚗' }} {{ p.numero }}</strong>
+          <strong><Icono :nombre="p.tipo === 'moto' ? 'two_wheeler' : 'directions_car'" /> {{ p.numero }}</strong>
           <span>{{ TIPOS[p.tipo] }} · {{ USOS[p.uso] }}<template v-if="p.ubicacion"> · {{ p.ubicacion }}</template></span>
           <span v-if="p.apartamento_id && p.asignado_hasta">Asignado hasta el {{ fechaCorta(p.asignado_hasta) }}</span>
           <span v-if="p.observaciones">{{ p.observaciones }}</span>

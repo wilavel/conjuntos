@@ -25,8 +25,8 @@ from .db import SessionLocal, engine, get_db  # carga .env (antes que correo)
 from . import correo
 from .models import (
     Apartamento, Base, DisponibilidadVisita, Foto, FotoZona, Noticia, Parqueadero,
-    PersonaApartamento, Postulacion, Propiedad, Sorteo, TipoPropiedad, Usuario, Visita,
-    ZonaComun,
+    HorarioZona, PersonaApartamento, Postulacion, Propiedad, Reserva, Sorteo, TipoPropiedad,
+    Usuario, Visita, ZonaComun,
 )
 
 BASE_DIR = Path(__file__).parent
@@ -139,6 +139,7 @@ DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "doming
 DIAS_AGENDA = 14  # se pueden agendar visitas en los próximos 14 días
 DURACIONES_VISITA = [15, 20, 30, 45, 60, 90]
 ESTADOS_VISITA = ["pendiente", "confirmada", "cancelada"]
+DIAS_RESERVA = 30  # se reserva hasta con 30 días de anticipación
 TIPOS_PARQUEADERO = ["carro", "moto"]
 USOS_PARQUEADERO = ["residente", "visitante"]
 MAX_MB_FOTO = 15  # tamaño máximo de cada archivo (luego se reduce a 1600 px)
@@ -166,6 +167,8 @@ COLUMNAS_NUEVAS = [
     ("parqueaderos", "asignado_hasta", "DATE"),
     ("apartamentos_conjunto", "deudor", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("postulaciones", "excluido", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("zonas_comunes", "reservable", "BOOLEAN NOT NULL DEFAULT TRUE"),
+    ("zonas_comunes", "capacidad", "INTEGER NOT NULL DEFAULT 1"),
 ]
 
 
@@ -204,6 +207,14 @@ with SessionLocal() as s:
     if not s.scalars(select(ZonaComun.id).limit(1)).first():
         for orden, zona in enumerate(ZONAS_INICIALES):
             s.add(ZonaComun(orden=orden, **zona))
+        s.commit()
+
+# Horario de atención inicial: si ninguna zona tiene horario, todas abren de 06:00 a 22:00
+with SessionLocal() as s:
+    if not s.scalars(select(HorarioZona.id).limit(1)).first():
+        for zona in s.scalars(select(ZonaComun)):
+            for dia in range(7):
+                s.add(HorarioZona(zona_id=zona.id, dia=dia, inicio="06:00", fin="22:00"))
         s.commit()
 
 app = FastAPI(title="Anuncios de propiedades")
@@ -434,8 +445,34 @@ class ZonaIn(BaseModel):
     icono: str = Field("", max_length=30)
     resumen: str = Field("", max_length=300)
     descripcion: str = ""
-    horario: str = Field("", max_length=200)
+    horario: str = Field("", max_length=200)  # nota opcional además de las franjas
     orden: int = 0
+    reservable: bool = True
+    capacidad: int = Field(1, ge=1, le=50)
+    franjas: list[FranjaIn] = Field(default_factory=list, max_length=21)  # horario de atención
+
+    @field_validator("franjas")
+    @classmethod
+    def franjas_validas(cls, v):
+        for f in v:
+            if minutos(f.fin) <= minutos(f.inicio):
+                raise ValueError(f"El {DIAS[f.dia]}: la hora final debe ser mayor que la inicial")
+        return v
+
+
+class ReservaIn(BaseModel):
+    zona_id: int
+    apartamento_id: int
+    fecha: date
+    inicio: str
+    horas: int = Field(ge=1, le=2)  # franjas de 1 o 2 horas
+
+    @field_validator("inicio")
+    @classmethod
+    def hora_en_punto(cls, v: str) -> str:
+        if not re.fullmatch(r"([01]\d|2[0-3]):00", v or ""):
+            raise ValueError("La reserva empieza en una hora en punto (ej. 18:00)")
+        return v
 
 
 class VisitaIn(BaseModel):
@@ -443,8 +480,16 @@ class VisitaIn(BaseModel):
     hora: str
     nombre: str = Field(min_length=2, max_length=100)
     telefono: str = Field(max_length=30)
-    email: str = Field("", max_length=255)
+    email: str = Field(max_length=255)  # obligatorio: nombre, correo y teléfono del interesado
     mensaje: str = Field("", max_length=1000)
+
+    @field_validator("nombre")
+    @classmethod
+    def nombre_valido(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) < 2:
+            raise ValueError("Escribe tu nombre")
+        return v
 
     @field_validator("telefono")
     @classmethod
@@ -453,10 +498,10 @@ class VisitaIn(BaseModel):
 
     @field_validator("email")
     @classmethod
-    def email_opcional(cls, v: str) -> str:
+    def email_valido(cls, v: str) -> str:
         v = (v or "").strip().lower()
-        if v and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", v):
-            raise ValueError("Correo no válido")
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", v):
+            raise ValueError("Escribe un correo válido")
         return v
 
 
@@ -1179,6 +1224,32 @@ def salida_apartamento(a: Apartamento, db: Session | None = None) -> dict:
     }
 
 
+def resumen_horario(franjas: list) -> str:
+    """[lun..dom 06:00-22:00] -> "Lunes a domingo, 06:00 a 22:00"; agrupa días seguidos con igual horario."""
+    if not franjas:
+        return ""
+    por_hora: dict[tuple, list[int]] = {}
+    for f in franjas:
+        por_hora.setdefault((f.inicio, f.fin), []).append(f.dia)
+    partes = []
+    for (inicio, fin), dias in sorted(por_hora.items(), key=lambda x: min(x[1])):
+        dias = sorted(set(dias))
+        grupos, actual = [], [dias[0]]
+        for d in dias[1:]:
+            if d == actual[-1] + 1:
+                actual.append(d)
+            else:
+                grupos.append(actual)
+                actual = [d]
+        grupos.append(actual)
+        texto_dias = ", ".join(
+            DIAS[g[0]] if len(g) == 1 else f"{DIAS[g[0]]} a {DIAS[g[-1]]}" for g in grupos
+        )
+        partes.append(f"{texto_dias}, {inicio} a {fin}")
+    texto = "; ".join(partes)
+    return texto[0].upper() + texto[1:]
+
+
 def salida_zona(z: ZonaComun) -> dict:
     return {
         "id": z.id,
@@ -1187,8 +1258,13 @@ def salida_zona(z: ZonaComun) -> dict:
         "icono": z.icono,
         "resumen": z.resumen,
         "descripcion": z.descripcion,
-        "horario": z.horario,
+        "nota_horario": z.horario,
+        # Texto del horario de atención: el de las franjas (o el texto libre si no hay)
+        "horario": resumen_horario(z.franjas) or z.horario,
         "orden": z.orden,
+        "reservable": z.reservable,
+        "capacidad": z.capacidad,
+        "franjas": [{"dia": f.dia, "inicio": f.inicio, "fin": f.fin} for f in z.franjas],
         "fotos": [{"id": f.id, "url": f"/uploads/{f.archivo}"} for f in z.fotos],
     }
 
@@ -1209,7 +1285,7 @@ def slug_libre(db: Session, nombre: str, excepto: int | None = None) -> str:
 
 def obtener_zona(db: Session, zona_id: int) -> ZonaComun:
     zona = db.scalars(
-        select(ZonaComun).options(selectinload(ZonaComun.fotos)).where(ZonaComun.id == zona_id)
+        select(ZonaComun).options(selectinload(ZonaComun.fotos), selectinload(ZonaComun.franjas)).where(ZonaComun.id == zona_id)
     ).first()
     if not zona:
         raise HTTPException(404, "Zona no encontrada")
@@ -1768,6 +1844,130 @@ def mis_sorteos(db: Session = Depends(get_db), usuario: Usuario = Depends(requie
     return resultado
 
 
+# ---------- reservas de zonas comunes ----------
+
+def mis_apartamentos(usuario: Usuario, db: Session) -> set[int]:
+    """Apartamentos donde la cuenta (verificada) es propietaria o arrendataria activa."""
+    return {a["id"] for a in perfil(usuario, db)["apartamentos"]}
+
+
+def horas_reserva(zona: ZonaComun, fecha: date, horas: int, db: Session, excepto: int | None = None) -> list[str]:
+    """Horas en punto en que se puede empezar una reserva de `horas` horas ese día."""
+    ahora = ahora_bogota()
+    if fecha < ahora.date() or fecha > ahora.date() + timedelta(days=DIAS_RESERVA):
+        return []
+    ocupadas = [
+        (minutos(r.inicio), minutos(r.inicio) + r.horas * 60)
+        for r in db.scalars(
+            select(Reserva).where(
+                Reserva.zona_id == zona.id, Reserva.fecha == fecha, Reserva.estado == "activa",
+                *([Reserva.id != excepto] if excepto else []),
+            )
+        )
+    ]
+    libres = []
+    for f in zona.franjas:
+        if f.dia != fecha.weekday():
+            continue
+        m = -(-minutos(f.inicio) // 60) * 60  # primera hora en punto dentro de la franja
+        while m + horas * 60 <= minutos(f.fin):
+            fin = m + horas * 60
+            momento = datetime.combine(fecha, datetime.min.time()) + timedelta(minutes=m)
+            simultaneas = sum(1 for a, b in ocupadas if a < fin and m < b)
+            if momento > ahora and simultaneas < zona.capacidad:
+                libres.append(f"{m // 60:02d}:00")
+            m += 60
+    return sorted(set(libres))
+
+
+def salida_reserva(r: Reserva) -> dict:
+    fin = minutos(r.inicio) + r.horas * 60
+    return {
+        "id": r.id,
+        "zona": {"id": r.zona.id, "nombre": r.zona.nombre, "icono": r.zona.icono},
+        "apartamento": {"id": r.apartamento.id, "numero": r.apartamento.numero, "torre": r.apartamento.torre},
+        "fecha": r.fecha.isoformat(),
+        "dia": DIAS[r.fecha.weekday()],
+        "inicio": r.inicio,
+        "fin": f"{fin // 60:02d}:{fin % 60:02d}",
+        "horas": r.horas,
+        "estado": r.estado,
+        "creado": r.creado,
+    }
+
+
+@app.get("/api/zonas/{zona_id}/disponibilidad")
+def disponibilidad_zona(
+    zona_id: int, fecha: date, horas: int = 1,
+    db: Session = Depends(get_db), _: Usuario = Depends(requiere_sesion),
+):
+    zona = obtener_zona(db, zona_id)
+    if not zona.reservable:
+        return {"horas": []}
+    return {"horas": horas_reserva(zona, fecha, max(1, min(horas, 2)), db)}
+
+
+@app.post("/api/reservas", status_code=201)
+def reservar_zona(datos: ReservaIn, db: Session = Depends(get_db), usuario: Usuario = Depends(requiere_sesion)):
+    """Un propietario o arrendatario reserva una zona para su apartamento (1 o 2 horas)."""
+    if datos.apartamento_id not in mis_apartamentos(usuario, db) and not es_admin(usuario):
+        raise HTTPException(403, "Solo puedes reservar para tu apartamento")
+    zona = obtener_zona(db, datos.zona_id)
+    if not zona.reservable:
+        raise HTTPException(400, "Esta zona no se reserva")
+    if datos.inicio not in horas_reserva(zona, datos.fecha, datos.horas, db):
+        raise HTTPException(409, "Esa hora no está disponible (fuera del horario de atención o ya reservada)")
+    ya = db.scalars(
+        select(Reserva.id).where(
+            Reserva.zona_id == zona.id, Reserva.apartamento_id == datos.apartamento_id,
+            Reserva.fecha == datos.fecha, Reserva.estado == "activa",
+        )
+    ).first()
+    if ya:
+        raise HTTPException(409, "Tu apartamento ya tiene una reserva de esta zona ese día")
+    reserva = Reserva(**datos.model_dump(), usuario_id=usuario.id)
+    db.add(reserva)
+    db.commit()
+    return salida_reserva(db.get(Reserva, reserva.id))
+
+
+@app.get("/api/mis-reservas")
+def mis_reservas(db: Session = Depends(get_db), usuario: Usuario = Depends(requiere_sesion)):
+    """Próximas reservas de los apartamentos del usuario."""
+    aptos = mis_apartamentos(usuario, db)
+    if not aptos:
+        return []
+    reservas = db.scalars(
+        select(Reserva)
+        .where(Reserva.apartamento_id.in_(aptos), Reserva.fecha >= ahora_bogota().date())
+        .order_by(Reserva.fecha, Reserva.inicio)
+    )
+    return [salida_reserva(r) for r in reservas]
+
+
+@app.get("/api/zonas/{zona_id}/reservas")
+def reservas_de_zona(zona_id: int, db: Session = Depends(get_db), _: Usuario = Depends(requiere_admin)):
+    """Próximas reservas de una zona (administración)."""
+    reservas = db.scalars(
+        select(Reserva)
+        .where(Reserva.zona_id == zona_id, Reserva.fecha >= ahora_bogota().date())
+        .order_by(Reserva.fecha, Reserva.inicio)
+    )
+    return [salida_reserva(r) for r in reservas]
+
+
+@app.delete("/api/reservas/{reserva_id}")
+def cancelar_reserva(reserva_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(requiere_sesion)):
+    reserva = db.get(Reserva, reserva_id)
+    if not reserva:
+        raise HTTPException(404, "Reserva no encontrada")
+    if not es_admin(usuario) and reserva.apartamento_id not in mis_apartamentos(usuario, db):
+        raise HTTPException(403, "Solo puedes cancelar las reservas de tu apartamento")
+    reserva.estado = "cancelada"
+    db.commit()
+    return salida_reserva(reserva)
+
+
 # ---------- visitas ----------
 
 def ahora_bogota() -> datetime:
@@ -1831,13 +2031,27 @@ def fecha_texto(v: Visita) -> str:
 def avisar_nueva_visita(prop: Propiedad, v: Visita, db: Session) -> None:
     """Correo a quien publicó el aviso y, si dejó correo, confirmación al visitante."""
     enlace = f"{SITIO_URL}/#/propiedades/{prop.id}"
+    # A quien creó el aviso y a los propietarios activos del apartamento (sin repetir correos)
+    destinos = {}
     creador = db.get(Usuario, prop.usuario_id) if prop.usuario_id else None
     if creador:
+        destinos[creador.email] = creador.nombre
+    if prop.apartamento_id:
+        for p in db.scalars(
+            select(PersonaApartamento).where(
+                PersonaApartamento.apartamento_id == prop.apartamento_id,
+                PersonaApartamento.rol == "propietario",
+                PersonaApartamento.activo.is_(True),
+            )
+        ):
+            if p.email:
+                destinos.setdefault(p.email, p.nombre)
+    for email, nombre in destinos.items():
         correo.enviar(
-            creador.email,
+            email,
             f"Nueva visita agendada · {prop.titulo}",
-            f"Hola, {creador.nombre}:\n\n{v.nombre} agendó una visita para el {fecha_texto(v)}.\n"
-            f"Teléfono: {v.telefono}\n" + (f"Correo: {v.email}\n" if v.email else "")
+            f"Hola, {nombre}:\n\n{v.nombre} agendó una visita para el {fecha_texto(v)}.\n"
+            f"Teléfono: {v.telefono}\nCorreo: {v.email}\n"
             + (f"Mensaje: {v.mensaje}\n" if v.mensaje else "")
             + f"\nConfírmala o cancélala en el aviso:\n{enlace}\n\nTrend Apartamentos",
         )
@@ -1904,6 +2118,24 @@ def listar_visitas(
     proximas = sorted((v for v in visitas if v.fecha >= hoy), key=lambda v: (v.fecha, v.hora))
     pasadas = sorted((v for v in visitas if v.fecha < hoy), key=lambda v: (v.fecha, v.hora), reverse=True)
     return [salida_visita(v) for v in proximas + pasadas]
+
+
+@app.get("/api/mis-visitas")
+def mis_visitas(db: Session = Depends(get_db), usuario: Usuario = Depends(requiere_sesion)):
+    """Próximas visitas agendadas a los avisos de los apartamentos del propietario."""
+    aptos = apartamentos_propios(usuario, db)
+    if not aptos:
+        return []
+    visitas = db.scalars(
+        select(Visita)
+        .join(Propiedad)
+        .where(Propiedad.apartamento_id.in_(aptos), Visita.fecha >= ahora_bogota().date())
+        .order_by(Visita.fecha, Visita.hora)
+    )
+    return [
+        {**salida_visita(v), "aviso": {"id": v.propiedad.id, "titulo": v.propiedad.titulo}}
+        for v in visitas
+    ]
 
 
 @app.patch("/api/visitas/{visita_id}")
@@ -2102,6 +2334,8 @@ def eliminar_apartamento(
     db: Session = Depends(get_db),
     _: Usuario = Depends(requiere_admin),
 ):
+    for r in db.scalars(select(Reserva).where(Reserva.apartamento_id == apto_id)):
+        db.delete(r)
     # Sus parqueaderos quedan libres
     for parq in db.scalars(select(Parqueadero).where(Parqueadero.apartamento_id == apto_id)):
         parq.apartamento_id = None
@@ -2344,7 +2578,7 @@ def cambiar_rol(
 def listar_zonas(db: Session = Depends(get_db)):
     consulta = (
         select(ZonaComun)
-        .options(selectinload(ZonaComun.fotos))
+        .options(selectinload(ZonaComun.fotos), selectinload(ZonaComun.franjas))
         .order_by(ZonaComun.orden, ZonaComun.id)
     )
     return [salida_zona(z) for z in db.scalars(consulta)]
@@ -2353,7 +2587,7 @@ def listar_zonas(db: Session = Depends(get_db)):
 @app.get("/api/zonas/{slug}")
 def ver_zona(slug: str, db: Session = Depends(get_db)):
     zona = db.scalars(
-        select(ZonaComun).options(selectinload(ZonaComun.fotos)).where(ZonaComun.slug == slug)
+        select(ZonaComun).options(selectinload(ZonaComun.fotos), selectinload(ZonaComun.franjas)).where(ZonaComun.slug == slug)
     ).first()
     if not zona:
         raise HTTPException(404, "Zona no encontrada")
@@ -2366,7 +2600,8 @@ def crear_zona(
     db: Session = Depends(get_db),
     _: Usuario = Depends(requiere_admin),
 ):
-    zona = ZonaComun(slug=slug_libre(db, datos.nombre), **datos.model_dump())
+    zona = ZonaComun(slug=slug_libre(db, datos.nombre), **datos.model_dump(exclude={"franjas"}))
+    zona.franjas = [HorarioZona(dia=f.dia, inicio=f.inicio, fin=f.fin) for f in datos.franjas]
     db.add(zona)
     db.commit()
     return salida_zona(obtener_zona(db, zona.id))
@@ -2382,8 +2617,9 @@ def actualizar_zona(
     zona = obtener_zona(db, zona_id)
     if datos.nombre != zona.nombre:
         zona.slug = slug_libre(db, datos.nombre, excepto=zona_id)
-    for campo, valor in datos.model_dump().items():
+    for campo, valor in datos.model_dump(exclude={"franjas"}).items():
         setattr(zona, campo, valor)
+    zona.franjas = [HorarioZona(dia=f.dia, inicio=f.inicio, fin=f.fin) for f in datos.franjas]
     db.commit()
     return salida_zona(zona)
 
@@ -2394,6 +2630,8 @@ def eliminar_zona(
     db: Session = Depends(get_db),
     _: Usuario = Depends(requiere_admin),
 ):
+    for r in db.scalars(select(Reserva).where(Reserva.zona_id == zona_id)):
+        db.delete(r)
     db.delete(obtener_zona(db, zona_id))
     db.commit()
     shutil.rmtree(UPLOADS / "zonas" / str(zona_id), ignore_errors=True)

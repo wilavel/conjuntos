@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import Icono from './Icono.vue'
 
 // Resultado de crear cuentas: correo enviado, o enlace para compartir a mano si no hay SMTP
 defineProps({ invitaciones: { type: Array, required: true } })
@@ -22,7 +23,7 @@ async function copiar(enlace) {
     <ul>
       <li v-for="i in invitaciones" :key="i.email">
         <template v-if="i.enviado">
-          ✉️ {{ i.nueva ? 'Cuenta creada y correo' : 'Correo' }} enviado a <strong>{{ i.email }}</strong> con el
+          <Icono nombre="mark_email_read" /> {{ i.nueva ? 'Cuenta creada y correo' : 'Correo' }} enviado a <strong>{{ i.email }}</strong> con el
           enlace para crear su contraseña.
         </template>
         <template v-else>

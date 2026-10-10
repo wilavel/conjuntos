@@ -5,6 +5,7 @@ import { api, cop, capitalizar, nombreApto, whatsapp, ESTADOS, MAX_FOTOS } from 
 import AgendarVisita from '../components/AgendarVisita.vue'
 import VisitasAviso from '../components/VisitasAviso.vue'
 import { esAdmin } from '../sesion'
+import Icono from '../components/Icono.vue'
 
 const props = defineProps({ id: String })
 const router = useRouter()
@@ -140,7 +141,7 @@ async function copiar() {
       <span class="rotulo">Contacto</span>
       <ul>
         <li v-for="t in prop.telefonos" :key="t">
-          <a class="contacto-tel" :href="`tel:${t.replace(/[^\d+]/g, '')}`">📞 {{ t }}</a>
+          <a class="contacto-tel" :href="`tel:${t.replace(/[^\d+]/g, '')}`"><Icono nombre="call" /> {{ t }}</a>
           <a class="boton secundario" :href="`tel:${t.replace(/[^\d+]/g, '')}`">Llamar</a>
           <a class="boton boton-whatsapp" :href="whatsapp(t)" target="_blank" rel="noopener">WhatsApp</a>
         </li>
