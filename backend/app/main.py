@@ -17,8 +17,8 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Response, UploadFile
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps
-from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import inspect, select, text
+from pydantic import BaseModel, Field, field_validator, model_validator
+from sqlalchemy import inspect, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from .db import SessionLocal, engine, get_db  # carga .env (antes que correo)
@@ -140,6 +140,8 @@ DIAS_AGENDA = 14  # se pueden agendar visitas en los próximos 14 días
 DURACIONES_VISITA = [15, 20, 30, 45, 60, 90]
 ESTADOS_VISITA = ["pendiente", "confirmada", "cancelada"]
 DIAS_RESERVA = 30  # se reserva hasta con 30 días de anticipación
+TIPOS_PERSONA = ["natural", "juridica"]
+TIPOS_DOCUMENTO = ["CC", "NIT", "CE", "PP", "TI"]  # cédula, NIT, extranjería, pasaporte, tarjeta de identidad
 TIPOS_PARQUEADERO = ["carro", "moto"]
 USOS_PARQUEADERO = ["residente", "visitante"]
 MAX_MB_FOTO = 15  # tamaño máximo de cada archivo (luego se reduce a 1600 px)
@@ -169,6 +171,9 @@ COLUMNAS_NUEVAS = [
     ("postulaciones", "excluido", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("zonas_comunes", "reservable", "BOOLEAN NOT NULL DEFAULT TRUE"),
     ("zonas_comunes", "capacidad", "INTEGER NOT NULL DEFAULT 1"),
+    ("personas_apartamento", "tipo_persona", "VARCHAR(10) NOT NULL DEFAULT 'natural'"),
+    ("personas_apartamento", "tipo_documento", "VARCHAR(5) NOT NULL DEFAULT 'CC'"),
+    ("personas_apartamento", "representante", "VARCHAR(150) NOT NULL DEFAULT ''"),
 ]
 
 
@@ -337,17 +342,65 @@ def normalizar_identificacion(v: str) -> str:
     return re.sub(r"[^0-9A-Za-z]", "", v or "").upper()
 
 
+class DatosPersonaIn(BaseModel):
+    """Datos de una persona natural o una empresa (comunes a todos sus apartamentos)."""
+
+    nombre: str = Field(min_length=1, max_length=150)  # nombre completo o razón social
+    tipo_persona: str = "natural"
+    tipo_documento: str = "CC"
+    representante: str = Field("", max_length=150)
+    telefono: str = Field("", max_length=30)
+    email: str = Field(max_length=255)  # con él se crea su cuenta y se le envía el acceso
+
+    @field_validator("nombre", "telefono", "representante")
+    @classmethod
+    def sin_espacios(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator("email")
+    @classmethod
+    def email_valido(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", v):
+            raise ValueError("Correo no válido")
+        return v
+
+    @model_validator(mode="after")
+    def tipo_coherente(self):
+        if self.tipo_persona not in TIPOS_PERSONA:
+            raise ValueError("Tipo de persona no válido")
+        if self.tipo_documento not in TIPOS_DOCUMENTO:
+            raise ValueError("Tipo de documento no válido")
+        if self.tipo_persona == "juridica":
+            if self.tipo_documento != "NIT":
+                raise ValueError("Una empresa se identifica con NIT")
+            if not self.representante:
+                raise ValueError("Indica el representante legal de la empresa")
+        else:
+            if self.tipo_documento == "NIT":
+                raise ValueError("Una persona natural no se identifica con NIT")
+            self.representante = ""
+        return self
+
+
 class PersonaIn(BaseModel):
     nombre: str = Field(min_length=1, max_length=150)
     identificacion: str = Field(min_length=1, max_length=30)
+    tipo_persona: str = "natural"
+    tipo_documento: str = "CC"
+    representante: str = Field("", max_length=150)
     telefono: str = Field("", max_length=30)
     email: str = Field(max_length=255)  # con él se crea su cuenta y se le envía el acceso
     activo: bool = True
 
-    @field_validator("nombre", "telefono")
+    @field_validator("nombre", "telefono", "representante")
     @classmethod
     def sin_espacios(cls, v: str) -> str:
         return v.strip()
+
+    @model_validator(mode="after")
+    def tipo_coherente(self):
+        return DatosPersonaIn.tipo_coherente(self)
 
     @field_validator("email")
     @classmethod
@@ -757,21 +810,22 @@ def es_admin(usuario: Usuario) -> bool:
 
 
 def perfil(usuario: Usuario, db: Session, para_admin: bool = False) -> dict:
-    """Perfil efectivo y apartamentos donde la persona figura activa (por identificación).
+    """Perfil efectivo y apartamentos donde la persona figura activa.
 
-    Propietario o arrendatario solo si la administración verificó la cuenta; antes de eso
-    es "residente". Con para_admin se incluyen las coincidencias para poder verificarla.
+    La cuenta se relaciona con un propietario o arrendatario por su identificación o por su
+    correo (las cuentas y los correos los registra la administración). Propietario o
+    arrendatario solo si la cuenta está verificada; antes de eso es "residente".
+    Con para_admin se incluyen las coincidencias para poder verificarla.
     """
-    registros = []
+    criterios = [PersonaApartamento.email == usuario.email]
     if usuario.identificacion:
-        registros = db.scalars(
-            select(PersonaApartamento)
-            .options(selectinload(PersonaApartamento.apartamento))
-            .where(
-                PersonaApartamento.identificacion == usuario.identificacion,
-                PersonaApartamento.activo.is_(True),
-            )
-        ).all()
+        criterios.append(PersonaApartamento.identificacion == usuario.identificacion)
+    registros = db.scalars(
+        select(PersonaApartamento)
+        .options(selectinload(PersonaApartamento.apartamento))
+        .where(or_(*criterios), PersonaApartamento.activo.is_(True))
+        .order_by(PersonaApartamento.apartamento_id)
+    ).all()
     vinculados = registros if usuario.verificado else []
     roles = {r.rol for r in vinculados}
     rol = rol_staff(usuario) or (
@@ -896,11 +950,33 @@ def cuenta_para_persona(persona: PersonaApartamento, db: Session) -> tuple[Usuar
     return usuario, True
 
 
+def avisar_vinculacion(usuario: Usuario, persona: PersonaApartamento) -> dict:
+    """La persona ya tenía cuenta: se le avisa que quedó asociada a otro apartamento."""
+    apto = persona.apartamento
+    texto_rol = "propietario" if persona.rol == "propietario" else "arrendatario"
+    enlace = f"{SITIO_URL}/#/privado"
+    enviado = correo.enviar(
+        usuario.email,
+        f"Ahora eres {texto_rol} del Apto {apto.numero} · Trend Apartamentos",
+        f"Hola, {usuario.nombre}:\n\nLa administración de Trend Apartamentos te registró como "
+        f"{texto_rol} del Apto {apto.numero}.\n\nYa tienes cuenta en la página: entra con tu correo "
+        f"({usuario.email}) y tu contraseña de siempre para verlo en tu zona privada:\n{enlace}\n\n"
+        "Si olvidaste tu contraseña, pídele a la administración un nuevo enlace de acceso.\n\n"
+        "Administración · Alianza Grupo Inmobiliario S.A.S.",
+    )
+    return {"email": usuario.email, "nombre": usuario.nombre, "nueva": False, "vinculada": True,
+            "apartamento": apto.numero, "rol": persona.rol, "enviado": enviado}
+
+
 def invitar_personas(personas: list[PersonaApartamento], db: Session) -> list[dict]:
-    """Crea las cuentas que falten y envía el acceso solo a las nuevas."""
-    cuentas = [cuenta_para_persona(p, db) for p in personas if p.email]
+    """Crea las cuentas que falten: a las nuevas les envía el acceso (crear contraseña) y a las
+    que ya existían, un aviso de que quedaron asociadas al apartamento."""
+    cuentas = [(p, *cuenta_para_persona(p, db)) for p in personas if p.email]
     db.commit()
-    return [enviar_invitacion(u, nueva) for u, nueva in cuentas if nueva]
+    return [
+        enviar_invitacion(u, True) if nueva else avisar_vinculacion(u, p)
+        for p, u, nueva in cuentas
+    ]
 
 
 def usuario_del_token(token: str, db: Session) -> Usuario | None:
@@ -1190,6 +1266,9 @@ def salida_persona(p: PersonaApartamento) -> dict:
         "rol": p.rol,
         "nombre": p.nombre,
         "identificacion": p.identificacion,
+        "tipo_persona": p.tipo_persona,
+        "tipo_documento": p.tipo_documento,
+        "representante": p.representante,
         "telefono": p.telefono,
         "email": p.email,
         "activo": p.activo,
@@ -2381,6 +2460,59 @@ def actualizar_persona(
     validar_propietario_activo(apto)
     db.commit()
     return salida_apartamento(apto, db)
+
+
+# ---------- directorio de propietarios y arrendatarios ----------
+
+@app.get("/api/directorio")
+def directorio(rol: str = "propietario", db: Session = Depends(get_db), _: Usuario = Depends(requiere_admin)):
+    """Cada persona o empresa una sola vez (por identificación), con todos sus apartamentos activos."""
+    if rol not in ROLES:
+        raise HTTPException(400, "Rol no válido")
+    personas = db.scalars(
+        select(PersonaApartamento)
+        .options(selectinload(PersonaApartamento.apartamento))
+        .where(PersonaApartamento.rol == rol, PersonaApartamento.activo.is_(True))
+        .order_by(PersonaApartamento.id.desc())  # el registro más reciente manda en los datos
+    ).all()
+    grupos: dict[str, dict] = {}
+    for p in personas:
+        g = grupos.setdefault(p.identificacion, {
+            "identificacion": p.identificacion,
+            "nombre": p.nombre, "tipo_persona": p.tipo_persona, "tipo_documento": p.tipo_documento,
+            "representante": p.representante, "telefono": p.telefono, "email": p.email,
+            "apartamentos": [],
+        })
+        a = p.apartamento
+        g["apartamentos"].append({"id": a.id, "numero": a.numero, "torre": a.torre,
+                                  "coeficiente": a.coeficiente, "deudor": a.deudor})
+    emails = {u.email for u in db.scalars(select(Usuario))}
+    resultado = []
+    for g in grupos.values():
+        g["apartamentos"].sort(key=lambda a: orden_texto(a["numero"]))
+        g["suma_coeficientes"] = round(sum(a["coeficiente"] or 0 for a in g["apartamentos"]), 6)
+        g["en_mora"] = any(a["deudor"] for a in g["apartamentos"])
+        g["tiene_cuenta"] = g["email"] in emails
+        resultado.append(g)
+    return sorted(resultado, key=lambda g: g["nombre"].lower())
+
+
+@app.put("/api/directorio/{identificacion}")
+def actualizar_en_directorio(
+    identificacion: str, datos: DatosPersonaIn,
+    db: Session = Depends(get_db), _: Usuario = Depends(requiere_admin),
+):
+    """Actualiza los datos de la persona o empresa en todos sus apartamentos (de una vez)."""
+    registros = db.scalars(
+        select(PersonaApartamento).where(PersonaApartamento.identificacion == normalizar_identificacion(identificacion))
+    ).all()
+    if not registros:
+        raise HTTPException(404, "No se encontró esa identificación")
+    for p in registros:
+        for campo, valor in datos.model_dump().items():
+            setattr(p, campo, valor)
+    db.commit()
+    return {"actualizados": len(registros)}
 
 
 @app.delete("/api/personas/{persona_id}")

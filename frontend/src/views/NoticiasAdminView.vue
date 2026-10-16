@@ -1,5 +1,4 @@
 <script setup>
-import AdminNav from '../components/AdminNav.vue'
 import { ref, onMounted } from 'vue'
 import { api, fechaLarga } from '../api'
 
@@ -19,7 +18,6 @@ onMounted(async () => {
 </script>
 
 <template>
-  <AdminNav />
   <div class="encabezado titulo-admin">
     <h1>Administrar noticias</h1>
     <RouterLink class="boton" to="/admin/noticias/nueva">Nueva noticia</RouterLink>

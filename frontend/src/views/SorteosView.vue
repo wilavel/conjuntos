@@ -2,7 +2,6 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, fechaCorta } from '../api'
-import AdminNav from '../components/AdminNav.vue'
 
 const router = useRouter()
 const sorteos = ref([])
@@ -46,7 +45,6 @@ async function crear() {
 </script>
 
 <template>
-  <AdminNav />
   <div class="encabezado titulo-admin">
     <h1>Sorteos de parqueaderos</h1>
     <button v-if="!nuevo" type="button" class="boton" @click="abrir">Nuevo sorteo</button>

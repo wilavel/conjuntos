@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api, cop, nombreApto, fechaLarga } from '../api'
+import { api, cop, nombreApto, fechaLarga, documento } from '../api'
 import PersonaCampos from '../components/PersonaCampos.vue'
 import InvitacionesAviso from '../components/InvitacionesAviso.vue'
 import { ultimasInvitaciones } from '../invitaciones'
@@ -20,7 +20,7 @@ const ROLES = [
   { rol: 'propietario', lista: 'propietarios', titulo: 'Propietarios', singular: 'propietario' },
   { rol: 'arrendatario', lista: 'arrendatarios', titulo: 'Arrendatarios', singular: 'arrendatario' },
 ]
-const nuevaPersona = () => ({ nombre: '', identificacion: '', telefono: '', email: '' })
+const nuevaPersona = () => ({ nombre: '', identificacion: '', tipo_persona: 'natural', tipo_documento: 'CC', representante: '', telefono: '', email: '' })
 const nuevas = reactive({ propietario: null, arrendatario: null }) // formulario de alta abierto por rol
 const editando = ref(null) // id de la persona en edición
 const borrador = reactive(nuevaPersona())
@@ -112,7 +112,8 @@ const agregar = (rol) =>
   })
 
 const datosPersona = (p) => ({
-  nombre: p.nombre, identificacion: p.identificacion, telefono: p.telefono, email: p.email, activo: p.activo,
+  nombre: p.nombre, identificacion: p.identificacion, tipo_persona: p.tipo_persona, tipo_documento: p.tipo_documento,
+  representante: p.representante, telefono: p.telefono, email: p.email, activo: p.activo,
 })
 
 const cambiarEstado = (p) =>
@@ -213,8 +214,11 @@ const eliminar = () =>
           </form>
           <template v-else>
             <div class="persona-datos">
-              <strong>{{ p.nombre }}</strong>
-              <span>{{ p.identificacion }}</span>
+              <strong>
+                {{ p.nombre }}
+                <span v-if="p.tipo_persona === 'juridica'" class="perfil-insignia">Empresa</span>
+              </strong>
+              <span>{{ documento(p) }}<template v-if="p.representante"> · Rep. legal: {{ p.representante }}</template></span>
               <span v-if="p.telefono || p.email">{{ [p.telefono, p.email].filter(Boolean).join(' · ') }}</span>
               <small>Registrado el {{ fechaLarga(p.creado) }}</small>
             </div>
@@ -260,11 +264,11 @@ const eliminar = () =>
     <section class="personas">
       <div class="personas-cabeza">
         <h2>Avisos de venta y arriendo</h2>
-        <RouterLink class="boton secundario" :to="{ path: '/nuevo', query: { apartamento: apto.id } }">+ Publicar aviso</RouterLink>
+        <RouterLink class="boton secundario" :to="{ path: '/admin/avisos/nuevo', query: { apartamento: apto.id } }">+ Publicar aviso</RouterLink>
       </div>
       <p v-if="!avisos.length" class="vacio">Este apartamento no tiene avisos.</p>
       <div class="lista">
-        <RouterLink v-for="p in avisos" :key="p.id" class="fila" :to="`/propiedades/${p.id}`">
+        <RouterLink v-for="p in avisos" :key="p.id" class="fila" :to="`/admin/avisos/${p.id}`">
           <img v-if="p.fotos.length" :src="p.fotos[0].url" alt="" />
           <div v-else class="sin-foto">Sin foto</div>
           <div class="datos">

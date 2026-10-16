@@ -17,6 +17,8 @@ import ZonaFormView from './views/ZonaFormView.vue'
 import UsuariosView from './views/UsuariosView.vue'
 import ActivarView from './views/ActivarView.vue'
 import ParqueaderosView from './views/ParqueaderosView.vue'
+import AdminResumenView from './views/AdminResumenView.vue'
+import PropietariosView from './views/PropietariosView.vue'
 import SorteosView from './views/SorteosView.vue'
 import SorteoView from './views/SorteoView.vue'
 
@@ -27,7 +29,11 @@ const router = createRouter({
     { path: '/', component: HomeView, meta: { ancho: true } },
     { path: '/privado', component: PrivadoView },
     { path: '/activar/:token', component: ActivarView, props: true },
-    { path: '/admin', redirect: '/admin/apartamentos' },
+    // Panel de administración (diseño propio, ver PanelAdmin.vue)
+    { path: '/admin', component: AdminResumenView, meta: { admin: true } },
+    { path: '/admin/avisos/nuevo', component: FormView, meta: { admin: true } },
+    { path: '/admin/avisos/:id', component: DetalleView, props: true, meta: { admin: true } },
+    { path: '/admin/avisos/:id/editar', component: FormView, props: true, meta: { admin: true } },
     { path: '/nuevo', component: FormView, meta: { publicar: true } },
     { path: '/propiedades/:id', component: DetalleView, props: true },
     { path: '/propiedades/:id/editar', component: FormView, props: true, meta: { publicar: true } },
@@ -40,6 +46,7 @@ const router = createRouter({
     { path: '/admin/apartamentos', component: ApartamentosView, meta: { admin: true } },
     { path: '/admin/apartamentos/nuevo', component: ApartamentoNuevoView, meta: { admin: true } },
     { path: '/admin/apartamentos/:id', component: ApartamentoView, props: true, meta: { admin: true } },
+    { path: '/admin/propietarios', component: PropietariosView, meta: { admin: true } },
     { path: '/admin/parqueaderos', component: ParqueaderosView, meta: { admin: true } },
     { path: '/admin/sorteos', component: SorteosView, meta: { admin: true } },
     { path: '/admin/sorteos/:id', component: SorteoView, props: true, meta: { admin: true } },

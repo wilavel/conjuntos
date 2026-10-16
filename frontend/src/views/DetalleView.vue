@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { api, cop, capitalizar, nombreApto, whatsapp, ESTADOS, MAX_FOTOS } from '../api'
 import AgendarVisita from '../components/AgendarVisita.vue'
 import VisitasAviso from '../components/VisitasAviso.vue'
@@ -9,6 +9,9 @@ import Icono from '../components/Icono.vue'
 
 const props = defineProps({ id: String })
 const router = useRouter()
+const route = useRoute()
+const enPanel = route.path.startsWith('/admin')
+const base = enPanel ? '/admin/avisos' : '/propiedades'
 
 const prop = ref(null)
 const error = ref('')
@@ -124,6 +127,9 @@ async function copiar() {
 <template>
   <p v-if="error" class="error">{{ error }}</p>
   <template v-if="prop">
+    <RouterLink v-if="enPanel && prop.apartamento" class="articulo-volver" :to="`/admin/apartamentos/${prop.apartamento.id}`">
+      ← {{ nombreApto(prop.apartamento) }}
+    </RouterLink>
     <div class="encabezado">
       <div>
         <p class="tipo">{{ prop.tipo }}<template v-if="prop.apartamento"> · {{ nombreApto(prop.apartamento) }}</template></p>
@@ -221,7 +227,7 @@ async function copiar() {
       </div>
 
       <div class="acciones pie">
-        <RouterLink class="boton secundario" :to="`/propiedades/${prop.id}/editar`">Editar datos</RouterLink>
+        <RouterLink class="boton secundario" :to="`${base}/${prop.id}/editar`">Editar datos</RouterLink>
         <button class="boton peligro" type="button" @click="eliminar">Eliminar propiedad</button>
       </div>
     </template>

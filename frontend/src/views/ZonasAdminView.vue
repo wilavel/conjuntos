@@ -2,7 +2,6 @@
 import { ref, onMounted } from 'vue'
 import { api } from '../api'
 import { iconoZona } from '../zonas'
-import AdminNav from '../components/AdminNav.vue'
 
 const zonas = ref([])
 const cargando = ref(true)
@@ -20,7 +19,6 @@ onMounted(async () => {
 </script>
 
 <template>
-  <AdminNav />
   <div class="encabezado titulo-admin">
     <h1>Zonas comunes</h1>
     <RouterLink class="boton" to="/admin/zonas/nueva">Nueva zona</RouterLink>

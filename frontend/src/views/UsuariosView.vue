@@ -2,7 +2,6 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { api, nombreApto, PERFILES } from '../api'
 import { sesion, esSuperadmin } from '../sesion'
-import AdminNav from '../components/AdminNav.vue'
 import InvitacionesAviso from '../components/InvitacionesAviso.vue'
 
 const usuarios = ref([])
@@ -94,7 +93,6 @@ const cambiarRol = (u, rol) => {
 </script>
 
 <template>
-  <AdminNav />
   <div class="encabezado titulo-admin">
     <h1>Usuarios</h1>
     <button v-if="!nuevo" type="button" class="boton" @click="nuevo = vacio()">Nuevo usuario</button>
@@ -125,7 +123,7 @@ const cambiarRol = (u, rol) => {
   <p class="intro-admin">
     Al verificar una cuenta, la persona recibe el perfil de <strong>propietario</strong> o
     <strong>arrendatario</strong> según los apartamentos donde figura <em>activa</em> con la misma
-    identificación. Las cuentas que crea la administración quedan verificadas desde el inicio.
+    identificación o el mismo correo. Las cuentas que crea la administración quedan verificadas desde el inicio.
   </p>
 
   <nav class="filtros barra-filtros">

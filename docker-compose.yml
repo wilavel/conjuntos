@@ -1,0 +1,57 @@
+# Trend Apartamentos en contenedores: la aplicación y su propio PostgreSQL.
+#
+#   docker network create proxy       (una sola vez: red compartida con el túnel / proxy)
+#   cp .env.docker.example .env       (y cambia la contraseña)
+#   docker compose up -d --build
+#
+# Ver DOCKER.md para los detalles.
+
+name: trend
+
+services:
+  db:
+    image: postgres:18              # la misma versión del PostgreSQL del PC (respaldos compatibles)
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: conjuntos
+      POSTGRES_USER: trend
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en el archivo .env}
+    volumes:
+      - datos_db:/var/lib/postgresql   # en PostgreSQL 18 se monta la carpeta padre
+    networks: [interna]               # solo la aplicación la ve: sin puertos publicados
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trend -d conjuntos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    image: trend-app
+    restart: unless-stopped
+    env_file: backend/.env            # correo, SUPERADMIN_EMAILS, SECRET_KEY, EDIFICIO_*, SITIO_URL…
+    environment:
+      # La base de datos es el contenedor "db" (reemplaza el DATABASE_URL de backend/.env)
+      DATABASE_URL: postgresql+psycopg://trend:${DB_PASSWORD}@db:5432/conjuntos
+    volumes:
+      - uploads:/app/backend/uploads  # las fotos no se pierden al actualizar la imagen
+    ports:
+      # Para entrar desde este PC: http://localhost:8080 (solo local, no desde la red)
+      - "127.0.0.1:${TREND_PUERTO:-8080}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      interna: {}
+      proxy:
+        aliases: [trend]              # el túnel / proxy la encuentra como http://trend:8000
+
+volumes:
+  datos_db: {}
+  uploads: {}
+
+networks:
+  interna: {}
+  proxy:
+    external: true                    # compartida con las demás aplicaciones del PC
+    name: proxy

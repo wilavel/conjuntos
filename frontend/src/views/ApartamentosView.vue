@@ -1,7 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { api, nombreApto, coef } from '../api'
-import AdminNav from '../components/AdminNav.vue'
 
 const apartamentos = ref([])
 const cargando = ref(true)
@@ -39,7 +38,6 @@ const filtrados = computed(() => {
 </script>
 
 <template>
-  <AdminNav />
   <div class="encabezado titulo-admin">
     <h1>Apartamentos</h1>
     <RouterLink class="boton" to="/admin/apartamentos/nuevo">Nuevo apartamento</RouterLink>

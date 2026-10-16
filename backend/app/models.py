@@ -157,7 +157,10 @@ class PersonaApartamento(Base):
     apartamento_id: Mapped[int] = mapped_column(ForeignKey("apartamentos_conjunto.id"))
     rol: Mapped[str] = mapped_column(String(20))  # propietario | arrendatario
     nombre: Mapped[str] = mapped_column(String(150))
-    identificacion: Mapped[str] = mapped_column(String(30))  # cédula, NIT, pasaporte...
+    identificacion: Mapped[str] = mapped_column(String(30))  # número del documento (normalizado)
+    tipo_persona: Mapped[str] = mapped_column(String(10), default="natural")  # natural | juridica
+    tipo_documento: Mapped[str] = mapped_column(String(5), default="CC")  # CC, NIT, CE, PP, TI
+    representante: Mapped[str] = mapped_column(String(150), default="")  # representante legal (empresas)
     telefono: Mapped[str] = mapped_column(String(30), default="")
     email: Mapped[str] = mapped_column(String(255), default="")
     activo: Mapped[bool] = mapped_column(Boolean, default=True)

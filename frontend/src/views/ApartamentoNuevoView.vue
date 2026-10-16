@@ -7,7 +7,7 @@ import { ultimasInvitaciones } from '../invitaciones'
 
 const router = useRouter()
 
-const nuevaPersona = () => ({ nombre: '', identificacion: '', telefono: '', email: '' })
+const nuevaPersona = () => ({ nombre: '', identificacion: '', tipo_persona: 'natural', tipo_documento: 'CC', representante: '', telefono: '', email: '' })
 const form = reactive({
   numero: '', piso: '', area_m2: '', habitaciones: 0, banos: 0, coeficiente: '', deudor: false,
   propietarios: [nuevaPersona()],

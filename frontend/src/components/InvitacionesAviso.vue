@@ -22,7 +22,16 @@ async function copiar(enlace) {
     </div>
     <ul>
       <li v-for="i in invitaciones" :key="i.email">
-        <template v-if="i.enviado">
+        <!-- La persona ya tenía cuenta: solo se le avisa que quedó en el apartamento -->
+        <template v-if="i.vinculada">
+          <span>
+            <Icono :nombre="i.enviado ? 'mark_email_read' : 'info'" />
+            <strong>{{ i.email }}</strong> ya tenía cuenta: no se creó otra.
+            <template v-if="i.enviado">Se le envió un correo avisando que es {{ i.rol }} del Apto {{ i.apartamento }}.</template>
+            <template v-else>No se pudo enviar el aviso por correo; entra con su contraseña de siempre.</template>
+          </span>
+        </template>
+        <template v-else-if="i.enviado">
           <Icono nombre="mark_email_read" /> {{ i.nueva ? 'Cuenta creada y correo' : 'Correo' }} enviado a <strong>{{ i.email }}</strong> con el
           enlace para crear su contraseña.
         </template>

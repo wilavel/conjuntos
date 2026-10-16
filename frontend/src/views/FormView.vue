@@ -8,6 +8,8 @@ import HorarioVisitas from '../components/HorarioVisitas.vue'
 const props = defineProps({ id: String })
 const router = useRouter()
 const route = useRoute()
+// Dentro del panel de administración las rutas de avisos son /admin/avisos/...
+const base = route.path.startsWith('/admin') ? '/admin/avisos' : '/propiedades'
 
 const edificio = ref(null) // valores por defecto: todos son apartamentos del mismo edificio en Bogotá
 const apartamentos = ref([]) // apartamentos que se pueden elegir
@@ -95,7 +97,7 @@ async function guardar() {
   datos.administracion = form.administracion === '' ? null : Number(form.administracion)
   try {
     const p = props.id ? await api.actualizar(props.id, datos) : await api.crear(datos)
-    router.push(`/propiedades/${p.id}`)
+    router.push(`${base}/${p.id}`)
   } catch (e) {
     error.value = e.message
     guardando.value = false
@@ -103,7 +105,7 @@ async function guardar() {
 }
 
 const volver = computed(() => {
-  if (props.id) return `/propiedades/${props.id}`
+  if (props.id) return `${base}/${props.id}`
   if (!esAdmin.value) return '/privado'
   return form.apartamento_id ? `/admin/apartamentos/${form.apartamento_id}` : '/admin/apartamentos'
 })

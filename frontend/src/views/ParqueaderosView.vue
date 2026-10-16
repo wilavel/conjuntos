@@ -1,7 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { api, nombreApto, fechaCorta } from '../api'
-import AdminNav from '../components/AdminNav.vue'
 import Icono from '../components/Icono.vue'
 
 const parqueaderos = ref([])
@@ -116,7 +115,6 @@ const eliminar = (p) =>
 </script>
 
 <template>
-  <AdminNav />
   <div class="encabezado titulo-admin">
     <h1>Parqueaderos</h1>
     <div class="acciones-admin">

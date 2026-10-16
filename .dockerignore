@@ -1,0 +1,13 @@
+# No se copian a la imagen: dependencias locales, compilados, datos y secretos
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.db
+frontend/dist
+backend/uploads
+**/.env
+.env*
+!.env.docker.example
+.git
+.vscode
+*.md

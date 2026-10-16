@@ -87,6 +87,8 @@ export const api = {
   retirarPostulacion: (id) => pedir(`/api/postulaciones/${id}`, { method: 'DELETE' }),
   realizarSorteo: (id) => pedir(`/api/sorteos/${id}/realizar`, { method: 'POST' }),
   misSorteos: () => pedir('/api/mis-sorteos'),
+  directorio: (rol = 'propietario') => pedir(`/api/directorio?rol=${rol}`),
+  actualizarDirectorio: (identificacion, datos) => pedir(`/api/directorio/${encodeURIComponent(identificacion)}`, json('PUT', datos)),
   zonas: () => pedir('/api/zonas'),
   disponibilidadZona: (id, fecha, horas) => pedir(`/api/zonas/${id}/disponibilidad?fecha=${fecha}&horas=${horas}`),
   reservar: (datos) => pedir('/api/reservas', json('POST', datos)),
@@ -129,6 +131,10 @@ export const coef = (v) => `${Number(v).toLocaleString('es-CO', { maximumFractio
 // "2026-10-16" -> "16 de octubre de 2026" (sin desfase de zona horaria)
 export const fechaCorta = (iso) =>
   iso ? new Date(`${iso}T12:00:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }) : ''
+// Tipos de documento de identidad
+export const DOCUMENTOS = { CC: 'Cédula de ciudadanía', CE: 'Cédula de extranjería', PP: 'Pasaporte', TI: 'Tarjeta de identidad', NIT: 'NIT (empresa)' }
+// "C.C. 1020304050" / "NIT 9001234567"
+export const documento = (p) => `${{ CC: 'C.C.', CE: 'C.E.', PP: 'Pasaporte', TI: 'T.I.', NIT: 'NIT' }[p.tipo_documento] || ''} ${p.identificacion}`.trim()
 export const MAX_FOTOS = 10
 export const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
