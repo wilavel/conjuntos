@@ -45,6 +45,9 @@ SUPERADMIN_EMAILS = {
 # Clave para firmar los tokens de sesión. Sin SECRET_KEY se genera una al arrancar
 # y las sesiones se cierran cada vez que se reinicia el backend.
 SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_hex(32)
+if not os.getenv("SECRET_KEY"):
+    # Con varios procesos, cada uno tendría su propia clave y las sesiones fallarían al azar
+    print("ADVERTENCIA: falta SECRET_KEY en .env; las sesiones no funcionarán bien con varios procesos.")
 DURACION_SESION = 12 * 3600  # segundos
 DURACION_INVITACION = 7 * 24 * 3600  # el enlace para crear la contraseña dura 7 días
 # Dirección pública de la página, para los enlaces de los correos
@@ -1276,16 +1279,16 @@ def salida_persona(p: PersonaApartamento) -> dict:
     }
 
 
-def salida_apartamento(a: Apartamento, db: Session | None = None) -> dict:
+def salida_apartamento(
+    a: Apartamento, db: Session | None = None, parqueaderos: list[Parqueadero] | None = None
+) -> dict:
+    """Con `parqueaderos` ya cargados (listados) no consulta la base; si no, los busca."""
     personas = [salida_persona(p) for p in a.personas]
-    parqueaderos = (
-        sorted(
-            db.scalars(select(Parqueadero).where(Parqueadero.apartamento_id == a.id)),
-            key=lambda p: orden_texto(p.numero),
+    if parqueaderos is None:
+        parqueaderos = (
+            list(db.scalars(select(Parqueadero).where(Parqueadero.apartamento_id == a.id))) if db else []
         )
-        if db
-        else []
-    )
+    parqueaderos = sorted(parqueaderos, key=lambda p: orden_texto(p.numero))
     return {
         "id": a.id,
         "torre": a.torre,
@@ -2357,7 +2360,14 @@ def listar_apartamentos(
 ):
     liberar_vencidos(db)
     consulta = select(Apartamento).options(selectinload(Apartamento.personas))
-    return [salida_apartamento(a, db) for a in sorted(db.scalars(consulta), key=orden_numero)]
+    # Todos los parqueaderos asignados en UNA consulta (no una por apartamento)
+    por_apto: dict[int, list[Parqueadero]] = {}
+    for p in db.scalars(select(Parqueadero).where(Parqueadero.apartamento_id.is_not(None))):
+        por_apto.setdefault(p.apartamento_id, []).append(p)
+    return [
+        salida_apartamento(a, parqueaderos=por_apto.get(a.id, []))
+        for a in sorted(db.scalars(consulta), key=orden_numero)
+    ]
 
 
 @app.post("/api/apartamentos", status_code=201)

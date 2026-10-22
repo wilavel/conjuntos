@@ -3,7 +3,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { api } from '../api'
 
 // El visitante elige día y hora libres y deja sus datos (no necesita cuenta)
-const props = defineProps({ avisoId: { type: Number, required: true } })
+const props = defineProps({ avisoId: { type: Number, required: true }, enVentana: Boolean })
 
 const dias = ref([])
 const duracion = ref(30)
@@ -50,15 +50,18 @@ async function agendar() {
 </script>
 
 <template>
-  <section v-if="dias.length || agendada" class="agendar">
+  <section v-if="dias.length || agendada || enVentana" class="agendar">
     <h2>Agenda una visita</h2>
+    <p v-if="enVentana && !dias.length && !agendada" class="vacio">
+      No hay horas libres para visitas en los próximos 14 días. Comunícate por teléfono o WhatsApp.
+    </p>
 
     <div v-if="agendada" class="aviso-ok">
       <strong>¡Listo, {{ agendada.nombre }}!</strong> Tu solicitud de visita quedó para el
       {{ fechaLarga(agendada.fecha) }} a las {{ agendada.hora }}. Te contactarán para confirmarla.
     </div>
 
-    <form v-else class="formulario" @submit.prevent="agendar">
+    <form v-else-if="dias.length" class="formulario" @submit.prevent="agendar">
       <div>
         <span class="agendar-paso">1. Elige el día</span>
         <div class="agendar-dias">

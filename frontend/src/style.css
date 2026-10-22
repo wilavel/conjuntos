@@ -1107,3 +1107,22 @@ main.panel-contenido { max-width: 1120px; width: 100%; margin: 0; padding: 2rem 
 .directorio-apto small { color: var(--suave); font-size: .75rem; }
 .directorio-total { margin: .75rem 0 0; color: var(--tenue); font-size: .82rem; }
 .filtros.barra-filtros { justify-content: flex-start; }
+.agendar.agendar-arriba { margin-top: 1.75rem; }
+.agendar.agendar-arriba h2 { margin-top: 0; }
+
+/* ---------- ventana emergente (agendar visita) ---------- */
+.contacto-cabeza { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.contacto ul:empty { display: none; }
+.ventana {
+  width: min(760px, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); padding: 0; border: 0; border-radius: var(--radio);
+  background: var(--fondo); color: var(--tinta); box-shadow: 0 30px 80px rgb(0 0 0 / .35);
+}
+.ventana::backdrop { background: rgb(25 28 29 / .55); backdrop-filter: blur(2px); }
+.ventana .agendar { margin: 0; padding: 1.75rem clamp(1rem, 4vw, 2rem) 2rem; }
+.ventana .agendar h2 { margin: 0 2.5rem 1rem 0; }
+.ventana-cerrar {
+  position: absolute; top: .75rem; right: .75rem; display: grid; place-items: center; width: 40px; height: 40px;
+  border: 0; border-radius: 50%; background: var(--papel-3); color: var(--tinta); cursor: pointer;
+}
+.ventana-cerrar:hover { background: var(--tinta); color: #fff; }
+.ventana-cerrar .material-symbols-outlined { vertical-align: 0; }

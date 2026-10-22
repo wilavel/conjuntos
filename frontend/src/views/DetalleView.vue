@@ -11,6 +11,17 @@ const props = defineProps({ id: String })
 const router = useRouter()
 const route = useRoute()
 const enPanel = route.path.startsWith('/admin')
+
+// Ventana emergente "Agendar visita": solo si el aviso está publicado y tiene horario de visitas
+const ventana = ref(null)
+const visitaAbierta = ref(false)
+const puedeAgendar = computed(() => prop.value?.estado === 'publicado' && prop.value?.disponibilidad?.length > 0)
+function abrirVisita() {
+  visitaAbierta.value = true // se monta de nuevo: horas libres al día
+  ventana.value.showModal()
+}
+const cerrarVisita = () => ventana.value.close()
+const clicVentana = (e) => e.target === ventana.value && cerrarVisita() // clic en el fondo
 const base = enPanel ? '/admin/avisos' : '/propiedades'
 
 const prop = ref(null)
@@ -143,8 +154,13 @@ async function copiar() {
     </div>
 
     <!-- A dónde llamar -->
-    <div v-if="prop.telefonos?.length" class="contacto">
-      <span class="rotulo">Contacto</span>
+    <div v-if="prop.telefonos?.length || puedeAgendar" class="contacto">
+      <div class="contacto-cabeza">
+        <span class="rotulo">Contacto</span>
+        <button v-if="puedeAgendar" type="button" class="boton" @click="abrirVisita">
+          <Icono nombre="calendar_month" /> Agendar visita
+        </button>
+      </div>
       <ul>
         <li v-for="t in prop.telefonos" :key="t">
           <a class="contacto-tel" :href="`tel:${t.replace(/[^\d+]/g, '')}`"><Icono nombre="call" /> {{ t }}</a>
@@ -153,6 +169,12 @@ async function copiar() {
         </li>
       </ul>
     </div>
+
+    <!-- Ventana emergente para agendar la visita (Esc o clic afuera la cierran) -->
+    <dialog ref="ventana" class="ventana" aria-label="Agendar una visita" @click="clicVentana" @close="visitaAbierta = false">
+      <button type="button" class="ventana-cerrar" aria-label="Cerrar" @click="cerrarVisita"><Icono nombre="close" /></button>
+      <AgendarVisita v-if="visitaAbierta" en-ventana :aviso-id="prop.id" />
+    </dialog>
 
     <dl class="ficha">
       <div v-for="[etiqueta, valor] in datos" :key="etiqueta">
@@ -213,7 +235,6 @@ async function copiar() {
       </div>
     </template>
 
-    <AgendarVisita v-if="prop.estado === 'publicado'" :aviso-id="prop.id" />
     <VisitasAviso v-if="prop.puede_editar" :aviso-id="prop.id" />
 
     <!-- Herramientas de la administración -->

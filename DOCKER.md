@@ -59,6 +59,12 @@ docker compose up -d --build
 
 Cuando confirmes que todo está bien, puedes apagar el PostgreSQL del PC y el `uvicorn` de desarrollo.
 
+## Procesos
+
+La app atiende con **2 procesos** en paralelo (suficiente para unos 300 apartamentos). Para cambiarlo,
+agrega `TREND_PROCESOS=4` en la sección `environment` del servicio `app` y ejecuta
+`docker compose up -d`. Con varios procesos es obligatorio tener `SECRET_KEY` en `backend/.env`.
+
 ## Uso diario
 
 ```bash

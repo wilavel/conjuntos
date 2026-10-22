@@ -30,4 +30,9 @@ WORKDIR /app/backend
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/tipos', timeout=4)"
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# 1) Prepara la base UNA sola vez (tablas, columnas nuevas y datos iniciales: se hace al importar
+#    app.main), y solo después 2) arranca 2 procesos que atienden peticiones en paralelo.
+#    Así los procesos no compiten creando lo mismo al mismo tiempo.
+#    Requiere SECRET_KEY en backend/.env: si no, cada proceso firmaría las sesiones con otra clave.
+ENV TREND_PROCESOS=2
+CMD ["sh", "-c", "python -c 'import app.main' && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${TREND_PROCESOS} --proxy-headers --forwarded-allow-ips '*'"]
